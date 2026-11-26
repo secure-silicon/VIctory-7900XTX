@@ -12938,6 +12938,38 @@ mod tests {
         }
     }
 
+    #[test]
+    fn d16_table_accesses_read_the_view_kind() {
+        let table = root(RootType::Table, 0, 0);
+        let buffer = UsedResource {
+            kind: ResourceType::Uav,
+            root: RootType::Table,
+            table_offset_dwords: 0,
+            lower_bound: 0,
+            stride: 0,
+            dwords: 4,
+            user_data: 0,
+            slot: 0,
+        };
+        let opcodes = [
+            0xE200_0000,  // buffer_load_format_d16_x
+            0xE21C_0000, // buffer_store_format_d16_xyzw
+            0xE070_0000, // buffer_store_dword
+        ];
+        let reads_kind = opcodes.map(|access| {
+            let words = [
+                0xBE81_0380, // s_mov_b32 s1, 0
+                0xF408_0200, 0xFA00_0000, // s_load_dwordx4 s[8:11], s[0:1], 0
+                access, 0x8002_0000, // v0, off, s[8:11], 0
+                0xE070_0004, 0x8002_0000, // store v0 at byte offset 4 to keep the load live
+                S_ENDPGM,
+            ];
+            let shader = lower_with(&words, vec![table], vec![buffer]).unwrap();
+            shader.root_srvs.contains(&super::super::shader::SLOT_STRIDES)
+        });
+        assert_eq!(reads_kind, [true, true, false]);
+    }
+
     /// Lowers a one-thread compute program that copies four root constants
     /// (s0..s3) into v1..v4, runs `body`, and stores v0 to a raw buffer from a
     /// descriptor table, so the vector instructions in `body` have an effect.
